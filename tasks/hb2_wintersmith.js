@@ -559,7 +559,8 @@ function createJSConfig(cfg) {
     cdn: cfg.cdn,
     repo: cfg.repo,
     rtmp: cfg.rtmp,
-    fp5Key: cfg.fp5Key
+    fp5Key: cfg.fp5Key,
+    jsonPage : cfg.jsonPage
   };
   var filename = path.join(cfg.jsDir, 'config.js');
   fs.writeFileSync(filename, "var APP = {}; APP.cfg = " + JSON.stringify(config));
