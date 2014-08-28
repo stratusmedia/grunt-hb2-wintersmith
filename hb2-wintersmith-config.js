@@ -1,5 +1,3 @@
-var _ = require('underscore');
-
 module.exports = {
   account: 'ramonareces',
   site: 'www',
@@ -64,10 +62,8 @@ module.exports = {
   fp4RtmpUrl: 'http://dyyzh7ucyaj7e.cloudfront.net/public/players/flowplayer/swf/flowplayer.rtmp.swf',
   fp4BwcheckUrl: 'http://dyyzh7ucyaj7e.cloudfront.net/public/players/flowplayer/swf/flowplayer.bwcheck.swf',
 
-  beforeWritePage: function (cfg, pageCfg, page, contents) {
-    //console.log('beforeWritePage ' + page.id);
-    if (page.id == 'index') {
-      page.assets = contents.entrevistas.assets;
-    }
+  preCreateContents: function (cfg, contents) {
+    console.log('preCreateContents');
+    contents.index.assets = contents.entrevistas.assets;
   }
 };

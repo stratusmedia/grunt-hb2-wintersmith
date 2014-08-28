@@ -25,7 +25,8 @@ var cfgDefaults = {
   contents: 'contents', // Relative to output directory
   json: 'json', // Relative to contents
   js: 'js', // Relative to contents
-  fp4: 'js/fp4' // Relative to contents
+  fp4: 'js/fp4', // Relative to contents
+  jsonPage: 100
 };
 
 function assetType(asset) {
@@ -473,9 +474,20 @@ function createSitemap(cfg, contents) {
 }
 
 function createJSON(cfg, content) {
-  var json = {};
-  json = _.extend(json, _.pick(content, ['id', 'type', 'title', 'description', 'splash', 'tags', 'categories', 'values', 'parent', 'parents', 'children', 'assets']));
+  var json = _.extend({}, _.pick(content, ['id', 'type', 'title', 'description', 'splash', 'tags', 'categories', 'values', 'parent', 'parents', 'children', 'assets']));
   if (json.type == 'P') {
+    for (var start = 0, end = cfg.jsonPage, n = 0; start < json.assets.length; start += cfg.jsonPage, end += cfg.jsonPage, n++) {
+      var page = json.assets.slice(start, end);
+      for (var i = 0, assets = []; i < page.length; i++) {
+        var asset = APP.contents[page[i]];
+        var obj = _.pick(asset, ['id', 'type', 'title', 'description', 'splash']);
+        obj.v = videoResolutions(cfg.vres, asset);
+        assets.push(obj);
+      }
+      json.nPages = n+1;
+      var filename = path.join(cfg.jsonDir, json.id + '-assets-' + n + '.json');
+      fs.writeFileSync(filename, JSON.stringify(assets));
+    }
   } else if (json.type == 'V') {
     json.v = videoResolutions(cfg.vres, content);
   } else if (json.type == 'A') {
@@ -485,6 +497,7 @@ function createJSON(cfg, content) {
 }
 
 function createPage(cfg, pageCfg, content) {
+  //console.log('createPage ' + content.id);
   var filename, page = {};
   if (content) {
     page = createJSON(cfg, content);
@@ -586,9 +599,11 @@ function createLocals(cfg) {
 /* Create Content */
 function createContents(cfg, cb) {
   console.log('createContent ');
+
   if (cfg.preCreateContents) {
-    cfg.preCreateContents(cfg);
+    cfg.preCreateContents(cfg, APP.contents);
   }
+
   createLocals(cfg);
   createJSConfig(cfg);
   var sitemap = {}, searchs = {};
@@ -626,9 +641,11 @@ function createContents(cfg, cb) {
   }
   createSitemap(cfg, sitemap);
   createSearch(cfg, searchs);
+
   if (cfg.postCreateContents) {
-    cfg.postCreateContents(cfg);
+    cfg.postCreateContents(cfg, APP.contents);
   }
+
   console.log('createContent');
   cb();
 }
