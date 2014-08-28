@@ -1,0 +1,47 @@
+{
+  "name": "grunt-hb2-wintersmith",
+  "description": "HB2 wintersmith contents generator",
+  "version": "0.1.0",
+  "private": true,
+  "homepage": "https://github.com/stratusmedia/grunt-hb2-wintersmith",
+  "author": {
+    "name": "Fabio Ospitia Trujillo",
+    "email": "fabio.ospitia@stratusmedia.io"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/stratusmedia/grunt-hb2-wintersmith.git"
+  },
+  "bugs": {
+    "url": "https://github.com/stratusmedia/grunt-hb2-wintersmith/issues"
+  },
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": "https://github.com/stratusmedia/grunt-hb2-wintersmith/blob/master/LICENSE"
+    }
+  ],
+  "engines": {
+    "node": ">= 0.10.0"
+  },
+  "dependencies": {
+    "q": "*",
+    "underscore": "*",
+    "mongoskin": "*",
+    "mkdirp": "*",
+    "js2xmlparser": "*",
+    "diacritics": "*"
+  },
+  "devDependencies": {
+    "grunt-contrib-jshint": "^0.9.2",
+    "grunt-contrib-clean": "^0.5.0",
+    "grunt-contrib-nodeunit": "^0.3.3",
+    "grunt": "~0.4.5"
+  },
+  "peerDependencies": {
+    "grunt": "~0.4.5"
+  },
+  "keywords": [
+    "gruntplugin"
+  ]
+}
