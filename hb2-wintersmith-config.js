@@ -40,7 +40,7 @@ module.exports = {
       path: '/embebido/watch'
     }
   ],
-  media: 'mp4-base-360p', // for sitemap video:content_loc, facebook video/mp4 and twitter:player:stream ,
+  media: '360p', // for sitemap video:content_loc, facebook video/mp4 and twitter:player:stream ,
   vres: {
     '360p': {
       'mp4': 'mp4-base-360p'

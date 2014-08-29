@@ -186,21 +186,18 @@ function loadPlayer(id) {
 function loadPlayers(site) {
   console.log('loadPlayers');
   var players = [], promises = [];
-  for (var i = 0; i < site.channels.length; i++) {
-    var channel = site.channels[i];
-    for (var j = 0; j < channel.players.length; j++) {
-      var player = channel.players[j];
+  _.each(site.channels, function (channel) {
+    _.each(channel.players, function (player) {
       if (players.indexOf(player) < 0) {
         promises.push(loadPlayer(player));
         players.push(player);
       }
-    }
-  }
+    });
+  });
   Q.all(promises).then(function (players) {
-    for (var i = 0; i < players.length; i++) {
-      var player = players[i];
+    _.each(players, function (player) {
       APP.players[player.id] = player;
-    }
+    })
   });
 }
 
@@ -221,28 +218,20 @@ function loadSite(id) {
       loadPlayers(data);
 
       var channels = {};
-      for (var i = 0; i < data.channels.length; i++) {
-        var channel = data.channels[i];
+      _.each(data.channels, function (channel) {
         channels[channel.name] = channel;
-      }
+      });
       data.channels = channels;
-
-      data.url = 'http://' + data.domain;
-      if (data.alias) {
-        data.url = 'http://' + data.alias;
-      }
+      data.url = (data.alias) ? 'http://' + data.alias : 'http://' + data.domain;
 
       loadSitesAssets(data.id).then(function (siteAssets) {
-        var promises = [];
-        for (var i = 0; i < siteAssets.length; i++) {
-          var siteAsset = siteAssets[i];
-          promises.push(loadAsset(siteAsset.asset, siteAsset.channels));
-        }
+        var promises = _.map(siteAssets, function (siteAsset) {
+          return loadAsset(siteAsset.asset, siteAsset.channels);
+        });
         Q.all(promises).then(function (assets) {
-          for (var i = 0; i < assets.length; i++) {
-            var asset = assets[i];
-            APP.contents[asset.id] = assets[i];
-          }
+          _.each(assets, function (asset) {
+            APP.contents[asset.id] = asset;
+          });
           deferred.resolve(data);
         });
       });
@@ -289,39 +278,27 @@ function loadPlaylists(id, parents) {
       if (!data.children) data.children = [];
 
       loadPlaylistsAssets(data.id).then(function (playlistAssets) {
-
         // If playlist id or parent is the same site.playlist change by 'index'
-        if (data.id == APP.site.playlist) {
-          data.id = 'index';
-        }
-        if (data.parent && data.parent == APP.site.playlist) {
-          data.parent = 'index';
-        }
+        if (data.id == APP.site.playlist) data.id = 'index';
+        if (data.parent && data.parent == APP.site.playlist) data.parent = 'index';
 
-        data.assets = [];
-        for (var i = 0; i < playlistAssets.length; i++) {
-          var playlistAsset = playlistAssets[i];
+        data.id = diacritics.remove(data.id);
+        if (data.parent) data.parent = diacritics.remove(data.parent);
+
+        data.assets = _.compact(_.map(playlistAssets, function (playlistAsset) {
           if (APP.contents.hasOwnProperty(playlistAsset.asset)) {
-            APP.contents[playlistAsset.asset].playlists.push(diacritics.remove(data.id));
-            data.assets.push(playlistAsset.asset);
+            APP.contents[playlistAsset.asset].playlists.push(data.id);
+            return playlistAsset.asset;
           }
-        }
+        }));
 
-        var promises = [];
-        for (var k = 0; k < data.children.length; k++) {
-          var tmp = _.union(parents, [diacritics.remove(data.id)]);
-          promises.push(loadPlaylists(data.children[k], tmp));
-        }
+        var promises = _.map(data.children, function (child) {
+          return loadPlaylists(child, _.union(parents, [data.id]))
+        });
+        data.children = _.map(data.children, function (id) {
+          return diacritics.remove(id)
+        });
         Q.all(promises).then(function () {
-          data.id = diacritics.remove(data.id);
-          if (data.parent) {
-            data.parent = diacritics.remove(data.parent);
-          }
-          if (data.children) {
-            data.children = _.map(data.children, function (id) {
-              return diacritics.remove(id)
-            });
-          }
           APP.contents[data.id] = data;
           deferred.resolve(data);
         });
@@ -359,7 +336,7 @@ function loadData(opts, cb) {
 
 function createFp4Config(cfg, content) {
   //console.log('createFp4Config');
-  if (content.type != 'VIDEO') {
+  if (content.type != 'V') {
     return {};
   }
   var config = {};
@@ -392,29 +369,15 @@ function createFp4Config(cfg, content) {
     bitrates: []
   };
 
-  var bitrate;
-  for (var i = 0; i < content.contents.length; i++) {
-    var cnt = content.contents[i];
-    if (cnt.media == 'mp4-base-360p') {
-      if (cnt.format == 'MP4') {
-        bitrate = {};
-        bitrate.url = 'mp4:' + cnt.path;
-        bitrate.width = cnt.video.width;
-        bitrate.bitrate = cnt.video.bitrate;
-        bitrate.isDefault = true;
-        clip.bitrates.push(bitrate);
-      }
+  _.each(content.contents, function (value, res) {
+    if (value.mp4) {
+      var bitrate = {};
+      bitrate.url = 'mp4:' + value.mp4;
+      bitrate.bitrate = value.vbr;
+      if (res == cfg.media) bitrate.isDefault = true;
+      clip.bitrates.push(bitrate);
     }
-    if (cnt.media == 'mp4-main-480p') {
-      if (cnt.format == 'MP4') {
-        bitrate = {};
-        bitrate.url = 'mp4:' + cnt.path;
-        bitrate.width = cnt.video.width;
-        bitrate.bitrate = cnt.video.bitrate;
-        clip.bitrates.push(bitrate);
-      }
-    }
-  }
+  });
 
   config.playlist = [];
   config.playlist.push(splash);
@@ -425,63 +388,58 @@ function createFp4Config(cfg, content) {
 /* */
 function createSearch(cfg, contents) {
   console.log('createSearch');
-  var searchs = [];
-  for (var i in contents) {
-    if (contents.hasOwnProperty(i)) {
-      var content = contents[i];
-      var obj = {};
-      obj.i = content.id;
-      obj.c = content.type;
-      obj.t = content.title;
-      if (content.description) {
-        obj.d = content.description;
-      }
-      obj.s = content.splash;
-      searchs.push(obj);
+  var searchs = _.map(contents, function (content) {
+    var obj = {};
+    obj.i = content.id;
+    obj.c = content.type;
+    obj.t = content.title;
+    if (content.description) {
+      obj.d = content.description;
     }
-  }
+    obj.s = content.splash;
+    return obj;
+  });
   var filename = path.join(cfg.jsDir, 'search.js');
   fs.writeFileSync(filename, "APP.searchs = " + JSON.stringify(searchs));
 }
 
 function createSitemap(cfg, contents) {
   console.log('sitemapVideo');
-  var urls = [], url = {};
+  var url;
+
+  var urls = _.compact(_.map(contents, function (content) {
+    if (content.id == 'index') return;
+    url = {};
+    url.loc = APP.site.url + content.path + '/' + content.id;
+    url.changefreq = 'monthly';
+    url.lastmod = (content.updated) ? content.updated.toISOString() : content.created.toISOString();
+    if (content.type == 'V' && content.contents[cfg.media]) {
+      url['video:video'] = {};
+      url['video:video']['video:thumbnail_loc'] = cfg.cdn + content.splash;
+      url['video:video']['video:title'] = content.title;
+      if (content.description) {
+        url['video:video']['video:description'] = content.description;
+      }
+      url['video:video']['video:content_loc'] = cfg.cdn + content.contents[cfg.media].mp4;
+      if (content.contents[cfg.media].vdu) {
+        url['video:video']['video:duration'] = parseInt(content.contents[cfg.media].vdu / 1000);
+      }
+      url['video:video']['video:publication_date'] = content.created.toISOString();
+      if (!_.isEmpty(content.categories)) {
+        url['video:video']['video:category'] = content.categories[0];
+      }
+      if (!_.isEmpty(content.tags)) {
+        url['video:video']['video:tag'] = content.tags;
+      }
+    }
+    return url;
+  }));
+
+  url = {};
   url.loc = APP.site.url;
   url.changefreq = 'weekly';
-  urls.push(url);
-  for (var i in contents) {
-    if (contents.hasOwnProperty(i)) {
-      var content = contents[i];
-      if (content.id == 'index') {
-        continue;
-      }
-      url = {};
-      url.loc = APP.site.url + content.path + '/' + content.id;
-      url.changefreq = 'monthly';
-      url.lastmod = (content.updated) ? content.updated.toISOString() : content.created.toISOString();
-      if (content.type == 'VIDEO') {
-        url['video:video'] = {};
-        url['video:video']['video:thumbnail_loc'] = cfg.cdn + content.splash;
-        url['video:video']['video:title'] = content.title;
-        if (content.description) {
-          url['video:video']['video:description'] = content.description;
-        }
-        url['video:video']['video:content_loc'] = cfg.cdn + contentPath(cfg.media, content);
-        if (content.source && content.source.duration) {
-          url['video:video']['video:duration'] = content.source.duration;
-        }
-        url['video:video']['video:publication_date'] = content.created.toISOString();
-        if (!_.isEmpty(content.categories)) {
-          url['video:video']['video:category'] = content.categories[0];
-        }
-        if (!_.isEmpty(content.tags)) {
-          url['video:video']['video:tag'] = content.tags;
-        }
-      }
-      urls.push(url);
-    }
-  }
+  urls.unshift(url);
+
   var urlset = {
     '@': {
       'xmlns': 'http://www.sitemaps.org/schemas/sitemap/0.9',
@@ -497,28 +455,23 @@ function createSitemap(cfg, contents) {
 
 function filterContents(filter) {
   console.log('filterContents', filter);
-  var i, contents = [];
+  var contents = [];
   if (!filter) {
-    for (var id in APP.contents) {
-      if (APP.contents.hasOwnProperty(id)) {
-        contents.push(APP.contents[id]);
-      }
-    }
+    contents = _.map(APP.contents, function (content) {
+      return content;
+    });
   } else if (filter.types) {
-    for (var t = 0; t < filter.types.length; t++) {
-      for (i in APP.contents) {
-        if (APP.contents.hasOwnProperty(i) && APP.contents[i].type == filter.types[t]) {
-          contents.push(APP.contents[i]);
+    _.each(filter.types, function (type) {
+      contents = _.compact(_.map(APP.contents, function (content) {
+        if (content.type == type) {
+          return content;
         }
-      }
-    }
+      }));
+    });
   } else if (filter.ids) {
-    for (i = 0; i < filter.ids.length; i++) {
-      var fid = filter.ids[i];
-      if (APP.contents.hasOwnProperty(fid)) {
-        contents.push(APP.contents[fid]);
-      }
-    }
+    contents = _.compact(_.map(filter.ids, function (id) {
+      return APP.contents[id];
+    }));
   }
   return contents;
 }
@@ -610,6 +563,10 @@ function createContents(cfg, cb) {
     } else {
       json = (!_.isEmpty(cfg.assetProps)) ? _.pick(content, cfg.assetProps) : content;
       json.contents = assetJsonContents(cfg, json, APP.contents);
+      if (_.isEmpty(json.contents)) {
+        console.error('Error: Asset without contents: ' + json.id);
+        return;
+      }
       if (cfg.assetFn) json = cfg.assetFn(cfg, json, APP.contents);
     }
     if (cfg.jsonFn) json = cfg.jsonFn(cfg, json, APP.contents);
@@ -670,14 +627,6 @@ function createContents(cfg, cb) {
   cb();
 }
 
-function contentPath(media, asset) {
-  for (var i = 0; i < asset.contents.length; i++) {
-    if (asset.contents[i].media == media) {
-      return asset.contents[i].path;
-    }
-  }
-}
-
 function assetJsonContents(cfg, json, contents) {
   var asset = contents[json.id];
   if (asset.type = 'V') {
@@ -691,24 +640,19 @@ function assetJsonContents(cfg, json, contents) {
 }
 
 function videoResolutions(vres, asset) {
-  //console.log('videoResolutions');
   var videos = {};
-  for (var res in vres) {
-    if (vres.hasOwnProperty(res)) {
-      for (var fmt in vres[res]) {
-        if (vres[res].hasOwnProperty(fmt)) {
-          for (var i = 0; i < asset.contents.length; i++) {
-            if (asset.contents[i].media == vres[res][fmt]) {
-              if (!videos.hasOwnProperty(res)) {
-                videos[res] = {};
-              }
-              videos[res][fmt] = asset.contents[i].path;
-            }
-          }
+  _.each(vres, function (value, res) {
+    _.each(vres[res], function (value, fmt) {
+      _.each(asset.contents, function (content) {
+        if (content.media == vres[res][fmt]) {
+          if (!videos.hasOwnProperty(res)) videos[res] = {};
+          videos[res].vdu = content.duration;
+          videos[res].vbr = content.video.bitrate;
+          videos[res][fmt] = content.path;
         }
-      }
-    }
-  }
+      });
+    });
+  });
   return videos;
 }
 
