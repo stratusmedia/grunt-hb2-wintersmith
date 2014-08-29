@@ -1,8 +1,14 @@
+var _ = require('underscore');
+
 module.exports = {
   account: 'ramonareces',
   site: 'www',
   dbcon: 'mongodb://127.0.0.1:27017/ramonareces',
   output: 'tmp',
+//  assetProps: ['id', 'type', 'title', 'description', 'splash', 'tags', 'categories', 'contents','values'],
+//  playlistProps: ['id', 'type', 'title', 'description', 'splash', 'values', 'parent', 'children', 'created', 'updated', 'version', 'assets'],
+  playlistChildProps: ['id', 'type', 'title', 'description', 'splash'],
+  playlistAssetProps: ['id', 'type', 'title', 'description', 'splash'],
   pages: [
     {
       filter: {
@@ -10,12 +16,10 @@ module.exports = {
       },
       template: 'watch.jade',
       path: '/'
-
     },
     {
       sitemap: true,
       search: true,
-      json: true,
       fp4: true,
       template: 'watch.jade',
       path: '/watch'
@@ -63,7 +67,43 @@ module.exports = {
   fp4BwcheckUrl: 'http://dyyzh7ucyaj7e.cloudfront.net/public/players/flowplayer/swf/flowplayer.bwcheck.swf',
 
   preCreateContents: function (cfg, contents) {
-    console.log('preCreateContents');
+    //console.log('preCreateContents');
     contents.index.assets = contents.entrevistas.assets;
+  },
+
+  jsonFn: function (cfg, json, contents) {
+    //console.log('jsonFn');
+    var breadcrumbs = [];
+    if (json.type == 'P') {
+      breadcrumbs.push(_.union(json.parents, [json.id]));
+    } else {
+      _.each(json.playlists, function(pid) {
+        var playlist = contents[pid];
+        breadcrumbs.push(_.union(playlist.parents, [playlist.id, json.id]));
+      });
+    }
+    json.breadcrumbs= [];
+    _.each(breadcrumbs, function (ids) {
+      var objs = [];
+      _.each(ids, function(id) {
+        objs.push(_.pick(contents[id], ['id', 'title']));
+      });
+      json.breadcrumbs.push(objs);
+    });
+    return json;
+  },
+
+  beforeWritePageFn: function (cfg, page, contents) {
+    //console.log('beforeWritePageFn');
+    if (page.type == 'P') {
+      page.items = (page.id == 'index') ? page.children : _.union(page.children, page.assets);
+    } else {
+      if (!_.isEmpty(page.playlists)) {
+        var playlist = contents[page.playlists[0]];
+        page.items = _.union(playlist.children, playlist.assets);
+      }
+    }
+    return page;
   }
+
 };

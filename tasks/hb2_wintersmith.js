@@ -26,19 +26,98 @@ var cfgDefaults = {
   json: 'json', // Relative to contents
   js: 'js', // Relative to contents
   fp4: 'js/fp4', // Relative to contents
-  jsonPage: 100
+  jsonPage: 100,
+  assetProps: [],
+  playlistProps: [],
+  playlistChildProps: [],
+  playlistAssetProps: []
 };
 
-function assetType(asset) {
-  var type = 'O';
-  if (asset.type == 'VIDEO') {
-    type = 'V';
-  } else if (asset.type == 'AUDIO') {
-    type = 'A';
-  } else if (asset.type == 'IMAGE') {
-    type = 'I';
+function validateCfg(cfg) {
+  cfg = _.defaults(cfg, cfgDefaults);
+
+  if (!cfg.account) {
+    throw new Error('account is required!');
   }
-  return type;
+  if (!cfg.site) {
+    throw new Error('site is required!');
+  }
+  if (!cfg.dbcon) {
+    throw new Error('dbcon is required!');
+  }
+  if (!cfg.media) {
+    throw new Error('media is required!');
+  }
+  if (!cfg.vres) {
+    throw new Error('media is required!');
+  }
+
+  if (!_.isArray(cfg.assetProps)) {
+    throw new Error('assetProps must be an array!');
+  }
+  if (!_.isArray(cfg.playlistProps)) {
+    throw new Error('playlistProps must be an array!');
+  }
+  if (!_.isArray(cfg.playlistAssetProps)) {
+    throw new Error('playlistAssetProps must be an array!');
+  }
+  if (!_.isArray(cfg.playlistChildProps)) {
+    throw new Error('playlistChildProps must be an array!');
+  }
+
+  if (cfg.assetJsonFn && !_.isFunction(cfg.assetJsonFn)) {
+    throw new Error('assetJsonFn must be a function!');
+  }
+  if (cfg.playlistJsonFn && !_.isFunction(cfg.playlistJsonFn)) {
+    throw new Error('playlistJsonFn must be a function!');
+  }
+  if (cfg.playlistAssetJsonFn && !_.isFunction(cfg.playlistAssetJsonFn)) {
+    throw new Error('playlistAssetJsonFn must be a function!');
+  }
+  if (cfg.playlistChildJsonFn && !_.isFunction(cfg.playlistChildJsonFn)) {
+    throw new Error('playlistChildJsonFn must be a function!');
+  }
+
+  cfg.assetProps = _.union(cfg.assetProps, ['id', 'type', 'title', 'description', 'splash', 'tags', 'categories', 'contents', 'playlists', 'created', 'updated']);
+  cfg.playlistProps = _.union(cfg.playlistProps, ['id', 'type', 'title', 'description', 'splash', 'parent', 'parents', 'children', 'assets', 'created', 'updated']);
+
+  cfg.outputDir = (cfg.output) ? path.join(process.cwd(), cfg.output) : process.cwd();
+  cfg.contentsDir = path.join(cfg.outputDir, cfg.contents);
+  cfg.jsonDir = path.join(cfg.contentsDir, cfg.json);
+  cfg.jsDir = path.join(cfg.contentsDir, cfg.js);
+  cfg.fp4Dir = path.join(cfg.contentsDir, cfg.fp4);
+
+  mkdirp.sync(cfg.outputDir);
+  mkdirp.sync(cfg.contentsDir);
+  mkdirp.sync(cfg.jsonDir);
+  mkdirp.sync(cfg.jsDir);
+  mkdirp.sync(cfg.fp4Dir);
+
+  return cfg;
+}
+
+function initDb(dbcon) {
+  APP.db = mongo.db(dbcon, {
+    native_parser: true
+  });
+
+  APP.db.bind('sites');
+  APP.db.bind('sites.assets');
+  APP.db.bind('players');
+  APP.db.bind('playlists');
+  APP.db.bind('playlists.assets');
+  APP.db.bind('assets');
+}
+
+function assetType(type) {
+  if (type == 'VIDEO') {
+    return 'V';
+  } else if (type == 'AUDIO') {
+    return 'A';
+  } else if (type == 'IMAGE') {
+    return 'I';
+  }
+  return 'O';
 }
 
 /* Load Asset */
@@ -54,16 +133,10 @@ function loadAsset(id, channels) {
     } else {
       data.id = data._id;
       delete data._id;
-      data.type = assetType(data);
-      if (!data.title) {
-        data.title = '';
-      }
-      if (channels) {
-        data.channels = channels;
-      }
-      if (!data.contents) {
-        data.contents = [];
-      }
+      data.type = assetType(data.type);
+      if (!data.contents) data.contents = [];
+      data.channels = (channels) ? channels : [];
+      data.playlists = [];
       deferred.resolve(data);
     }
   });
@@ -168,7 +241,7 @@ function loadSite(id) {
         Q.all(promises).then(function (assets) {
           for (var i = 0; i < assets.length; i++) {
             var asset = assets[i];
-            APP.contents[asset.id] = asset;
+            APP.contents[asset.id] = assets[i];
           }
           deferred.resolve(data);
         });
@@ -211,9 +284,12 @@ function loadPlaylists(id, parents) {
     } else {
       data.id = data._id;
       delete data._id;
+      data.type = 'P';
+      data.parents = parents.slice();
+      if (!data.children) data.children = [];
+
       loadPlaylistsAssets(data.id).then(function (playlistAssets) {
 
-        data.type = 'P';
         // If playlist id or parent is the same site.playlist change by 'index'
         if (data.id == APP.site.playlist) {
           data.id = 'index';
@@ -222,22 +298,15 @@ function loadPlaylists(id, parents) {
           data.parent = 'index';
         }
 
-        data.parents = parents.slice();
-
         data.assets = [];
         for (var i = 0; i < playlistAssets.length; i++) {
           var playlistAsset = playlistAssets[i];
           if (APP.contents.hasOwnProperty(playlistAsset.asset)) {
-            var asset = APP.contents[playlistAsset.asset];
-            asset.parents = _.union(data.parents, [diacritics.remove(data.id)]);
-            asset.parent = diacritics.remove(data.id);
+            APP.contents[playlistAsset.asset].playlists.push(diacritics.remove(data.id));
             data.assets.push(playlistAsset.asset);
           }
         }
 
-        if (!data.children) {
-          data.children = [];
-        }
         var promises = [];
         for (var k = 0; k < data.children.length; k++) {
           var tmp = _.union(parents, [diacritics.remove(data.id)]);
@@ -288,54 +357,7 @@ function loadData(opts, cb) {
   });
 }
 
-function validateCfg(cfg) {
-  cfg = _.defaults(cfg, cfgDefaults);
-
-  if (!cfg.account) {
-    throw new Error('account is required!');
-  }
-  if (!cfg.site) {
-    throw new Error('site is required!');
-  }
-  if (!cfg.dbcon) {
-    throw new Error('dbcon is required!');
-  }
-  if (!cfg.media) {
-    throw new Error('media is required!')
-  }
-  if (!cfg.vres) {
-    throw new Error('media is required!')
-  }
-
-  cfg.outputDir = (cfg.output) ? path.join(process.cwd(), cfg.output) : process.cwd();
-  cfg.contentsDir = path.join(cfg.outputDir, cfg.contents);
-  cfg.jsonDir = path.join(cfg.contentsDir, cfg.json);
-  cfg.jsDir = path.join(cfg.contentsDir, cfg.js);
-  cfg.fp4Dir = path.join(cfg.contentsDir, cfg.fp4);
-
-  mkdirp.sync(cfg.outputDir);
-  mkdirp.sync(cfg.contentsDir);
-  mkdirp.sync(cfg.jsonDir);
-  mkdirp.sync(cfg.jsDir);
-  mkdirp.sync(cfg.fp4Dir);
-
-  return cfg;
-}
-
-function initDb(dbcon) {
-  APP.db = mongo.db(dbcon, {
-    native_parser: true
-  });
-
-  APP.db.bind('sites');
-  APP.db.bind('sites.assets');
-  APP.db.bind('players');
-  APP.db.bind('playlists');
-  APP.db.bind('playlists.assets');
-  APP.db.bind('assets');
-}
-
-function createFp4Config(cfg, content, path) {
+function createFp4Config(cfg, content) {
   //console.log('createFp4Config');
   if (content.type != 'VIDEO') {
     return {};
@@ -359,7 +381,7 @@ function createFp4Config(cfg, content, path) {
     scaling: 'fit'
   };
   var clip = {
-    pageUrl: APP.site.url + '/' + path + '/' + content.id,
+    pageUrl: APP.site.url + '/' + content.path + '/' + content.id,
     configUrl: APP.site.url + '/' + cfg.fp4 + '/' + content.id + '.js',
     provider: 'rtmp',
     urlResolvers: 'bwcheck',
@@ -473,57 +495,6 @@ function createSitemap(cfg, contents) {
   fs.writeFileSync(filename, xml);
 }
 
-function createJSON(cfg, content) {
-  var json = _.extend({}, _.pick(content, ['id', 'type', 'title', 'description', 'splash', 'tags', 'categories', 'values', 'parent', 'parents', 'children', 'assets']));
-  if (json.type == 'P') {
-    for (var start = 0, end = cfg.jsonPage, n = 0; start < json.assets.length; start += cfg.jsonPage, end += cfg.jsonPage, n++) {
-      var page = json.assets.slice(start, end);
-      for (var i = 0, assets = []; i < page.length; i++) {
-        var asset = APP.contents[page[i]];
-        var obj = _.pick(asset, ['id', 'type', 'title', 'description', 'splash']);
-        obj.v = videoResolutions(cfg.vres, asset);
-        assets.push(obj);
-      }
-      json.nPages = n+1;
-      var filename = path.join(cfg.jsonDir, json.id + '-assets-' + n + '.json');
-      fs.writeFileSync(filename, JSON.stringify(assets));
-    }
-  } else if (json.type == 'V') {
-    json.v = videoResolutions(cfg.vres, content);
-  } else if (json.type == 'A') {
-  } else if (json.type == 'I') {
-  }
-  return json;
-}
-
-function createPage(cfg, pageCfg, content) {
-  //console.log('createPage ' + content.id);
-  var filename, page = {};
-  if (content) {
-    page = createJSON(cfg, content);
-    if (cfg.beforeWriteJSON) {
-      cfg.beforeWriteJSON(cfg, pageCfg, page, APP.contents);
-    }
-    if (pageCfg.json) {
-      filename = path.join(cfg.jsonDir, page.id + '.json');
-      fs.writeFileSync(filename, JSON.stringify(page));
-    }
-    if (pageCfg.fp4) {
-      var fp4 = createFp4Config(cfg, content, pageCfg.path);
-      filename = path.join(cfg.fp4Dir, page.id + '.js');
-      fs.writeFileSync(filename, JSON.stringify(fp4));
-    }
-  }
-  page = _.extend(page, _.omit(pageCfg, ['filter', 'sitemap', 'search', 'json', 'fp4', 'outputDir']));
-
-  if (cfg.beforeWritePage) {
-    cfg.beforeWritePage(cfg, pageCfg, page, APP.contents);
-  }
-
-  filename = path.join(pageCfg.outputDir, page.id + '.json');
-  fs.writeFileSync(filename, JSON.stringify(page));
-}
-
 function filterContents(filter) {
   console.log('filterContents', filter);
   var i, contents = [];
@@ -560,7 +531,7 @@ function createJSConfig(cfg) {
     repo: cfg.repo,
     rtmp: cfg.rtmp,
     fp5Key: cfg.fp5Key,
-    jsonPage : cfg.jsonPage
+    jsonPage: cfg.jsonPage
   };
   var filename = path.join(cfg.jsDir, 'config.js');
   fs.writeFileSync(filename, "var APP = {}; APP.cfg = " + JSON.stringify(config));
@@ -597,55 +568,103 @@ function createLocals(cfg) {
   fs.writeFileSync(filename, JSON.stringify(locals));
 }
 
+function createPage(cfg, page) {
+  //console.log('createPage ' + page.id);
+  var filename;
+  if (page.fp4) {
+    var fp4 = createFp4Config(cfg, page);
+    filename = path.join(cfg.fp4Dir, page.id + '.js');
+    fs.writeFileSync(filename, JSON.stringify(fp4));
+  }
+
+  if (cfg.beforeWritePageFn) page = cfg.beforeWritePageFn(cfg, page, APP.contents);
+
+  filename = path.join(page.outputDir, page.id + '.json');
+  page = _.omit(page, ['filter', 'sitemap', 'search', 'json', 'fp4', 'outputDir']);
+  fs.writeFileSync(filename, JSON.stringify(page));
+}
+
 /* Create Content */
 function createContents(cfg, cb) {
   console.log('createContent ');
 
-  if (cfg.preCreateContents) {
-    cfg.preCreateContents(cfg, APP.contents);
-  }
+  var filename, start, end, range, n, jsons = {};
 
   createLocals(cfg);
   createJSConfig(cfg);
+
+  if (cfg.preCreateContents) cfg.preCreateContents(cfg, APP.contents);
+
+  _.each(APP.contents, function (content) {
+    if (content.type == 'P') {
+      var json = (!_.isEmpty(cfg.playlistProps)) ? _.pick(content, cfg.playlistProps) : content;
+      json.children = _.compact(_.map(json.children, function (id) {
+        var child = (!_.isEmpty(cfg.playlistChildProps)) ? _.pick(APP.contents[id], cfg.playlistChildProps) : id;
+        return (cfg.playlistChildFn) ? cfg.playlistChildFn(cfg, json, child, APP.contents) : child;
+      }));
+      json.assets = _.compact(_.map(json.assets, function (id) {
+        var asset = (!_.isEmpty(cfg.playlistAssetProps)) ? _.pick(APP.contents[id], cfg.playlistAssetProps) : id;
+        return (cfg.playlistAssetFn) ? cfg.playlistAssetFn(cfg, json, asset, APP.contents) : asset;
+      }));
+      if (cfg.playlistFn) json = cfg.playlistFn(cfg, json, APP.contents);
+    } else {
+      json = (!_.isEmpty(cfg.assetProps)) ? _.pick(content, cfg.assetProps) : content;
+      json.contents = assetJsonContents(cfg, json, APP.contents);
+      if (cfg.assetFn) json = cfg.assetFn(cfg, json, APP.contents);
+    }
+    if (cfg.jsonFn) json = cfg.jsonFn(cfg, json, APP.contents);
+
+    var wjson = (cfg.beforeWriteJsonFn) ? cfg.beforeWriteJsonFn(cfg, _.clone(json), APP.contents) : _.clone(json);
+    filename = path.join(cfg.jsonDir, json.id + '.json');
+    fs.writeFileSync(filename, JSON.stringify(wjson));
+
+    if (json.children && cfg.playlistChildrenJsonPages) {
+      for (start = 0, end = cfg.jsonPage, n = 0; start < json.children.length; start += cfg.jsonPage, end += cfg.jsonPage, n++) {
+        range = json.children.slice(start, end);
+        filename = path.join(cfg.jsonDir, json.id + '-children-' + n + '.json');
+        fs.writeFileSync(filename, JSON.stringify(range));
+      }
+    }
+    if (json.assets && cfg.playlistAssetsJsonPages) {
+      for (start = 0, end = cfg.jsonPage, n = 0; start < json.assets.length; start += cfg.jsonPage, end += cfg.jsonPage, n++) {
+        range = json.assets.slice(start, end);
+        filename = path.join(cfg.jsonDir, json.id + '-assets-' + n + '.json');
+        fs.writeFileSync(filename, JSON.stringify(range));
+      }
+    }
+    jsons[json.id] = json;
+  });
+  APP.contents = jsons;
+
   var sitemap = {}, searchs = {};
-  for (var i = 0; i < cfg.pages.length; i++) {
-    var page = cfg.pages[i];
+  _.each(cfg.pages, function (page) {
+    // Create the path directory relative to contents
     if (page.path) {
       page.outputDir = path.join(cfg.contentsDir, page.path);
       mkdirp.sync(page.outputDir);
     } else {
       page.outputDir = cfg.contentsDir;
     }
+
     if (page.id) {
-      if (page.search && !searchs.hasOwnProperty(page.id)) {
-        searchs[page.id] = page;
-      }
-      if (page.sitemap && !sitemap.hasOwnProperty(page.id)) {
-        sitemap[page.id] = page;
-      }
+      if (page.search && !searchs.hasOwnProperty(page.id)) searchs[page.id] = page;
+      if (page.sitemap && !sitemap.hasOwnProperty(page.id)) sitemap[page.id] = page;
       createPage(cfg, page);
     } else {
       var contents = filterContents(page.filter);
       console.log('createContent ' + contents.length);
-      for (var c = 0; c < contents.length; c++) {
-        var id = contents[c].id;
-        if (page.search && !searchs.hasOwnProperty(id)) {
-          searchs[id] = contents[c];
-        }
-        if (page.sitemap && !sitemap.hasOwnProperty(id)) {
-          sitemap[id] = contents[c];
-          sitemap[id].path = page.path;
-        }
-        createPage(cfg, page, contents[c]);
-      }
+      _.each(contents, function (content, id) {
+        if (page.search && !searchs.hasOwnProperty(id)) searchs[id] = content;
+        if (page.sitemap && !sitemap.hasOwnProperty(id)) sitemap[id] = _.extend(content, {path: page.path});
+        createPage(cfg, _.extend(content, page));
+      });
     }
-  }
+  });
+
   createSitemap(cfg, sitemap);
   createSearch(cfg, searchs);
 
-  if (cfg.postCreateContents) {
-    cfg.postCreateContents(cfg, APP.contents);
-  }
+  if (cfg.postCreateContents) cfg.postCreateContents(cfg, APP.contents);
 
   console.log('createContent');
   cb();
@@ -657,6 +676,18 @@ function contentPath(media, asset) {
       return asset.contents[i].path;
     }
   }
+}
+
+function assetJsonContents(cfg, json, contents) {
+  var asset = contents[json.id];
+  if (asset.type = 'V') {
+    return videoResolutions(cfg.vres, asset);
+  } else if (asset.type = 'A') {
+    return asset.contents;
+  } else if (asset.type = 'I') {
+    return asset.contents;
+  }
+  return asset.contents;
 }
 
 function videoResolutions(vres, asset) {
