@@ -522,11 +522,11 @@ function createPage(cfg, page) {
     fs.writeFileSync(filename, JSON.stringify(fp4));
   }
 
-  if (cfg.beforeWritePageFn) page = cfg.beforeWritePageFn(cfg, page, APP.contents);
+  var wpage = (cfg.beforeWritePageFn) ? cfg.beforeWritePageFn(cfg, _.clone(page), APP.contents) : _.clone(page);
+  wpage = _.omit(wpage, ['filter', 'sitemap', 'search', 'json', 'fp4', 'outputDir']);
 
   filename = path.join(page.outputDir, page.id + '.json');
-  page = _.omit(page, ['filter', 'sitemap', 'search', 'json', 'fp4', 'outputDir']);
-  fs.writeFileSync(filename, JSON.stringify(page));
+  fs.writeFileSync(filename, JSON.stringify(wpage));
 }
 
 /* Create Content */
