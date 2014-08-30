@@ -40,7 +40,9 @@ module.exports = {
       path: '/embebido/watch'
     }
   ],
-  media: '360p', // for sitemap video:content_loc, facebook video/mp4 and twitter:player:stream ,
+  media: 'mp4-base-360p',
+  cfgProps: ['resolution', 'vres'],
+  resolution: '360p', // for sitemap video:content_loc, facebook video/mp4 and twitter:player:stream ,
   vres: {
     '360p': {
       'mp4': 'mp4-base-360p'
@@ -66,8 +68,8 @@ module.exports = {
   fp4RtmpUrl: 'http://dyyzh7ucyaj7e.cloudfront.net/public/players/flowplayer/swf/flowplayer.rtmp.swf',
   fp4BwcheckUrl: 'http://dyyzh7ucyaj7e.cloudfront.net/public/players/flowplayer/swf/flowplayer.bwcheck.swf',
 
-  preCreateContents: function (cfg, contents) {
-    //console.log('preCreateContents');
+  beforeCreateContents: function (cfg, contents) {
+    //console.log('beforeCreateContents');
     contents.index.assets = contents.entrevistas.assets;
   },
 
@@ -77,18 +79,15 @@ module.exports = {
     if (json.type == 'P') {
       breadcrumbs.push(_.union(json.parents, [json.id]));
     } else {
-      _.each(json.playlists, function(pid) {
+      breadcrumbs = _.map(json.playlists, function (pid) {
         var playlist = contents[pid];
-        breadcrumbs.push(_.union(playlist.parents, [playlist.id, json.id]));
+        return _.union(playlist.parents, [playlist.id, json.id]);
       });
     }
-    json.breadcrumbs= [];
-    _.each(breadcrumbs, function (ids) {
-      var objs = [];
-      _.each(ids, function(id) {
-        objs.push(_.pick(contents[id], ['id', 'title']));
+    json.breadcrumbs = _.map(breadcrumbs, function (ids) {
+      return _.map(ids, function (id) {
+        return _.pick(contents[id], ['id', 'title']);
       });
-      json.breadcrumbs.push(objs);
     });
     return json;
   },

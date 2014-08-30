@@ -27,6 +27,7 @@ var cfgDefaults = {
   js: 'js', // Relative to contents
   fp4: 'js/fp4', // Relative to contents
   jsonPage: 100,
+  cfgProps: [],
   assetProps: [],
   playlistProps: [],
   playlistChildProps: [],
@@ -48,10 +49,10 @@ function validateCfg(cfg) {
   if (!cfg.media) {
     throw new Error('media is required!');
   }
-  if (!cfg.vres) {
-    throw new Error('media is required!');
-  }
 
+  if (!_.isArray(cfg.cfgProps)) {
+    throw new Error('cfgProps must be an array!');
+  }
   if (!_.isArray(cfg.assetProps)) {
     throw new Error('assetProps must be an array!');
   }
@@ -77,6 +78,8 @@ function validateCfg(cfg) {
   if (cfg.playlistChildJsonFn && !_.isFunction(cfg.playlistChildJsonFn)) {
     throw new Error('playlistChildJsonFn must be a function!');
   }
+
+  cfg.cfgProps = _.union(cfg.cfgProps, ['ssl','cdn','repo', 'rtmp', 'fp5Key', 'jsonPage', 'media']);
 
   cfg.assetProps = _.union(cfg.assetProps, ['id', 'type', 'title', 'description', 'splash', 'tags', 'categories', 'contents', 'playlists', 'created', 'updated']);
   cfg.playlistProps = _.union(cfg.playlistProps, ['id', 'type', 'title', 'description', 'splash', 'parent', 'parents', 'children', 'assets', 'created', 'updated']);
@@ -188,7 +191,7 @@ function loadPlayers(site) {
   var players = [], promises = [];
   _.each(site.channels, function (channel) {
     _.each(channel.players, function (player) {
-      if (players.indexOf(player) < 0) {
+      if (_.contains(players, player)) {
         promises.push(loadPlayer(player));
         players.push(player);
       }
@@ -374,7 +377,7 @@ function createFp4Config(cfg, content) {
       var bitrate = {};
       bitrate.url = 'mp4:' + value.mp4;
       bitrate.bitrate = value.vbr;
-      if (res == cfg.media) bitrate.isDefault = true;
+      if (res == cfg.resolution) bitrate.isDefault = true;
       clip.bitrates.push(bitrate);
     }
   });
@@ -413,16 +416,16 @@ function createSitemap(cfg, contents) {
     url.loc = APP.site.url + content.path + '/' + content.id;
     url.changefreq = 'monthly';
     url.lastmod = (content.updated) ? content.updated.toISOString() : content.created.toISOString();
-    if (content.type == 'V' && content.contents[cfg.media]) {
+    if (content.type == 'V' && content.contents[cfg.resolution]) {
       url['video:video'] = {};
       url['video:video']['video:thumbnail_loc'] = cfg.cdn + content.splash;
       url['video:video']['video:title'] = content.title;
       if (content.description) {
         url['video:video']['video:description'] = content.description;
       }
-      url['video:video']['video:content_loc'] = cfg.cdn + content.contents[cfg.media].mp4;
-      if (content.contents[cfg.media].vdu) {
-        url['video:video']['video:duration'] = parseInt(content.contents[cfg.media].vdu / 1000);
+      url['video:video']['video:content_loc'] = cfg.cdn + content.contents[cfg.resolution].mp4;
+      if (content.contents[cfg.resolution].vdu) {
+        url['video:video']['video:duration'] = parseInt(content.contents[cfg.resolution].vdu / 1000);
       }
       url['video:video']['video:publication_date'] = content.created.toISOString();
       if (!_.isEmpty(content.categories)) {
@@ -477,15 +480,9 @@ function filterContents(filter) {
 }
 
 function createJSConfig(cfg) {
-  var config = {
-    url: APP.site.url,
-    ssl: cfg.ssl,
-    cdn: cfg.cdn,
-    repo: cfg.repo,
-    rtmp: cfg.rtmp,
-    fp5Key: cfg.fp5Key,
-    jsonPage: cfg.jsonPage
-  };
+  var config = {};
+  config.url = APP.site.url;
+  config = _.extend(config, _.pick(cfg, cfg.cfgProps));
   var filename = path.join(cfg.jsDir, 'config.js');
   fs.writeFileSync(filename, "var APP = {}; APP.cfg = " + JSON.stringify(config));
 }
@@ -496,11 +493,6 @@ function createLocals(cfg) {
   locals.url = APP.site.url;
   locals.title = channel.title;
   locals.description = channel.description;
-  locals.ssl = cfg.ssl;
-  locals.cdn = cfg.cdn;
-  locals.repo = cfg.repo;
-  locals.rtmp = cfg.rtmp;
-  locals.fp4url = cfg.fp4url;
   locals.fb = {
     app_id: cfg.fb.app_id,
     site_name: channel.title
@@ -516,7 +508,7 @@ function createLocals(cfg) {
     locals.fp4Key = APP.site.flowplayerkey;
     locals.fp5Key = cfg.fp5Key;
   }
-
+  locals = _.extend(locals, _.pick(cfg, cfg.cfgProps));
   var filename = path.join(cfg.outputDir, 'locals.json');
   fs.writeFileSync(filename, JSON.stringify(locals));
 }
@@ -540,13 +532,12 @@ function createPage(cfg, page) {
 /* Create Content */
 function createContents(cfg, cb) {
   console.log('createContent ');
-
   var filename, start, end, range, n, jsons = {};
+
+  if (cfg.beforeCreateContents) cfg.beforeCreateContents(cfg, APP.contents);
 
   createLocals(cfg);
   createJSConfig(cfg);
-
-  if (cfg.preCreateContents) cfg.preCreateContents(cfg, APP.contents);
 
   _.each(APP.contents, function (content) {
     if (content.type == 'P') {
@@ -621,7 +612,7 @@ function createContents(cfg, cb) {
   createSitemap(cfg, sitemap);
   createSearch(cfg, searchs);
 
-  if (cfg.postCreateContents) cfg.postCreateContents(cfg, APP.contents);
+  if (cfg.afterCreateContents) cfg.afterCreateContents(cfg, APP.contents);
 
   console.log('createContent');
   cb();
