@@ -548,6 +548,7 @@ function createContents(cfg, cb) {
       }));
       json.assets = _.compact(_.map(json.assets, function (id) {
         var asset = (!_.isEmpty(cfg.playlistAssetProps)) ? _.pick(APP.contents[id], cfg.playlistAssetProps) : id;
+        asset.contents = assetJsonContents(cfg, asset, APP.contents);
         return (cfg.playlistAssetFn) ? cfg.playlistAssetFn(cfg, json, asset, APP.contents) : asset;
       }));
       if (cfg.playlistFn) json = cfg.playlistFn(cfg, json, APP.contents);
