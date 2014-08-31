@@ -522,7 +522,8 @@ function createPage(cfg, page) {
     fs.writeFileSync(filename, JSON.stringify(fp4));
   }
 
-  var wpage = (cfg.beforeWritePageFn) ? cfg.beforeWritePageFn(cfg, _.clone(page), APP.contents) : _.clone(page);
+  var wpage = JSON.parse(JSON.stringify(page));
+  wpage = (cfg.beforeWritePageFn) ? cfg.beforeWritePageFn(cfg, wpage, APP.contents) : wpage;
   wpage = _.omit(wpage, ['filter', 'sitemap', 'search', 'json', 'fp4', 'outputDir']);
 
   filename = path.join(page.outputDir, page.id + '.json');
@@ -563,7 +564,8 @@ function createContents(cfg, cb) {
     }
     if (cfg.jsonFn) json = cfg.jsonFn(cfg, json, APP.contents);
 
-    var wjson = (cfg.beforeWriteJsonFn) ? cfg.beforeWriteJsonFn(cfg, _.clone(json), APP.contents) : _.clone(json);
+    var wjson = JSON.parse(JSON.stringify(json));
+    wjson = (cfg.beforeWriteJsonFn) ? cfg.beforeWriteJsonFn(cfg, wjson, APP.contents) : wjson;
     filename = path.join(cfg.jsonDir, json.id + '.json');
     fs.writeFileSync(filename, JSON.stringify(wjson));
 
